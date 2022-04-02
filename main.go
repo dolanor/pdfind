@@ -74,6 +74,13 @@ func run(args []string) error {
 	return nil
 }
 
+type PDFSearcher struct {
+	filename string
+	reader   *pdf.Reader
+
+	searchExpr string
+}
+
 func (s *PDFSearcher) search() error {
 	err := s.searchFileName()
 	if err != nil {
@@ -206,11 +213,4 @@ func multisearch(text string, searchExpr string) (index int, context string) {
 	}
 	t := fmt.Sprintf("%s%s%s", text[ctxBegin:i], searchText, text[i+len(searchExpr):ctxEnd])
 	return i, t
-}
-
-type PDFSearcher struct {
-	filename string
-	reader   *pdf.Reader
-
-	searchExpr string
 }
