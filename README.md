@@ -14,3 +14,8 @@ usage:
   -out-style string
     	output style: "grep" or "csv" (default "grep")
 ```
+
+## Limitations
+
+- for now, it only works on textual PDF, for scanned PDF, we need to add some OCR system like tesseract.
+- can not find the actual line in the PDF (the plaintext transformation breaks the line system), the info is ordered by page, and then by character position in the page.
