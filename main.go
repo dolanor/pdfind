@@ -2,14 +2,22 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fatih/color"
 	"github.com/ledongthuc/pdf"
 )
+
+type config struct {
+	color       bool
+	contextSize uint
+}
 
 func main() {
 	err := run(os.Args[1:])
@@ -18,23 +26,42 @@ func main() {
 	}
 }
 
-func usage() string {
-	return fmt.Sprintf("usage:\n\tpdfind SEARCH FILE [FILE...]")
+func printUsage() {
+	fmt.Printf("usage:\n\tpdfind [FLAG]... PATTERNS [FILE]...\n")
+	flag.PrintDefaults()
 }
 
+var cfg config
+
 func run(args []string) error {
-	if len(args) < 2 {
-		print(usage())
+	colorcfg := flag.Bool("color", true, "colored search expression context")
+	contextSize := flag.Uint("context", 30, "context displayed (how many character before and after the match is output")
+
+	flag.Usage = printUsage
+	flag.Parse()
+	cfg = config{
+		color:       *colorcfg,
+		contextSize: *contextSize,
+	}
+
+	if flag.NArg() < 1 {
+		flag.Usage()
 		return errors.New("not enough arguments passed to CLI")
 	}
 
-	searchExpr := args[0]
+	searchExpr := flag.Arg(0)
+	var files []string
+	if flag.NArg() == 1 {
+		// we scan current dir by default
+		files = []string{"."}
+	} else {
 
-	files := args[1:]
+		files = flag.Args()[1:]
+	}
 
 	for _, f := range files {
-		s := PDFSearcher{filename: f}
-		err := s.search(searchExpr)
+		s := PDFSearcher{filename: f, searchExpr: searchExpr}
+		err := s.search()
 		if err != nil {
 			// we don't stop the whole program for 1 file
 			log.Printf(`could not search in file "%s"`, f)
@@ -43,7 +70,7 @@ func run(args []string) error {
 	return nil
 }
 
-func (s *PDFSearcher) search(searchExpr string) error {
+func (s *PDFSearcher) search() error {
 	f, err := os.Open(s.filename)
 	if err != nil {
 		return err
@@ -54,14 +81,65 @@ func (s *PDFSearcher) search(searchExpr string) error {
 	if err != nil {
 		return err
 	}
+	if st.IsDir() {
+		err = s.searchDir(f)
+		return err
+	}
 
-	s.reader, err = pdf.NewReader(f, st.Size())
+	err = s.searchFile(f, st.Size())
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s PDFSearcher) searchDir(f *os.File) error {
+	err := filepath.WalkDir(f.Name(), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			log.Println("walkdir:", err)
+			return fs.SkipDir
+		}
+
+		lName := strings.ToLower(d.Name())
+		if !strings.HasSuffix(lName, ".pdf") {
+			return nil
+		}
+
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		s := PDFSearcher{filename: path, searchExpr: s.searchExpr}
+		err = s.searchFile(f, fi.Size())
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s PDFSearcher) searchFile(f *os.File, size int64) error {
+	var err error
+	s.reader, err = pdf.NewReader(f, size)
 	if err != nil {
 		return err
 	}
 
 	for i := 1; i <= s.reader.NumPage(); i++ {
-		err := s.searchInPage(searchExpr, i)
+		err := s.searchInPage(s.searchExpr, i)
 		if err != nil {
 			log.Printf(`could not search in file "%s", page %d: %v`, s.filename, i, err)
 		}
@@ -102,15 +180,20 @@ func multisearch(text string, searchExpr string) (index int, context string) {
 		return -1, ""
 	}
 
-	ctxBegin := i - 30
-	ctxEnd := i + 30
+	ctxBegin := i - int(cfg.contextSize)
+	ctxEnd := i + len(searchExpr) + int(cfg.contextSize)
 	if ctxBegin < 0 {
 		ctxBegin = 0
 	}
 	if ctxEnd >= len(text) {
 		ctxEnd = len(text) - 1
 	}
-	t := fmt.Sprintf("%s%s%s", text[ctxBegin:i], color.RedString(text[i:i+len(searchExpr)]), text[i+len(searchExpr):ctxEnd])
+
+	searchText := text[i : i+len(searchExpr)]
+	if cfg.color {
+		searchText = color.RedString(searchText)
+	}
+	t := fmt.Sprintf("%s%s%s", text[ctxBegin:i], searchText, text[i+len(searchExpr):ctxEnd])
 	return i, t
 }
 
