@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"log"
@@ -33,7 +32,8 @@ func run(args []string) error {
 	files := args[1:]
 
 	for _, f := range files {
-		err := searchInFile(searchExpr, f)
+		s := PDFSearcher{filename: f}
+		err := s.search(searchExpr)
 		if err != nil {
 			// we don't stop the whole program for 1 file
 			log.Printf(`could not search in file "%s"`, f)
@@ -42,8 +42,8 @@ func run(args []string) error {
 	return nil
 }
 
-func searchInFile(searchExpr string, filename string) error {
-	f, err := os.Open(filename)
+func (s *PDFSearcher) search(searchExpr string) error {
+	f, err := os.Open(s.filename)
 	if err != nil {
 		return err
 	}
@@ -54,41 +54,56 @@ func searchInFile(searchExpr string, filename string) error {
 		return err
 	}
 
-	r, err := pdf.NewReader(f, st.Size())
+	s.reader, err = pdf.NewReader(f, st.Size())
 	if err != nil {
 		return err
 	}
 
-	for i := 1; i <= r.NumPage(); i++ {
-		err := searchInPage(searchExpr, r, i)
+	for i := 1; i <= s.reader.NumPage(); i++ {
+		err := s.searchInPage(searchExpr, i)
 		if err != nil {
-			log.Printf(`could not search in file "%s", page %d`, filename, i)
+			log.Printf(`could not search in file "%s", page %d: %v`, s.filename, i, err)
 		}
 	}
 
 	return nil
 }
 
-func searchInPage(searchExpr string, r *pdf.Reader, page int) error {
-	p := r.Page(page)
+func (s PDFSearcher) searchInPage(searchExpr string, page int) error {
+	p := s.reader.Page(page)
 	if p.V.IsNull() {
 		// nothing to see here
 		return nil
 	}
 
-	b, err := r.GetPlainText()
+	text, err := p.GetPlainText(nil)
 	if err != nil {
 		return err
 	}
-	var buf bytes.Buffer
-	buf.ReadFrom(b)
 
-	v := strings.ToLower(buf.String())
-	s := strings.ToLower(searchExpr)
-	contains := strings.Contains(v, s)
-	if contains {
-		log.Printf("found in %s, page %d", "LOL", page)
+	v := strings.ToLower(text)
+	ss := strings.ToLower(searchExpr)
+	i := strings.Index(v, ss)
+	// no text found
+	if i == -1 {
 		return nil
 	}
+
+	begin := i - 30
+	end := i + 30
+	if begin < 0 {
+		begin = 0
+	}
+	if end >= len(v) {
+		end = len(v) - 1
+	}
+	fmt.Printf("%s:p%d:%d: %s\n", s.filename, page, i, v[begin:end])
 	return nil
+}
+
+type PDFSearcher struct {
+	filename string
+	reader   *pdf.Reader
+
+	searchExpr string
 }
