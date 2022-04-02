@@ -1,4 +1,4 @@
-module github.com/dolanor/pdfsearch
+module github.com/dolanor/pdfind
 
 go 1.18
 
