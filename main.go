@@ -34,10 +34,15 @@ func printUsage() {
 
 var cfg config
 
+const (
+	OutStyleGrep string = "grep"
+	OutStyleCSV  string = "csv"
+)
+
 func run(args []string) error {
 	colorcfg := flag.Bool("color", true, "colored search expression context")
 	contextSize := flag.Uint("context", 30, "context displayed (how many character before and after the match is output")
-	outStyle := flag.String("out-style", "grep", `output style: "grep" or "csv"`)
+	outStyle := flag.String("out-style", OutStyleGrep, `output style: "grep" or "csv"`)
 
 	flag.Usage = printUsage
 	flag.Parse()
@@ -62,7 +67,10 @@ func run(args []string) error {
 		files = flag.Args()[1:]
 	}
 
-	fmt.Printf(`"%s","%s","%s","%s"\n`, "filename", "page", "colum", "context")
+	if cfg.outStyle == OutStyleCSV {
+		fmt.Printf(`"%s","%s","%s","%s"
+`, "filename", "page", "colum", "context")
+	}
 	for _, f := range files {
 		s := PDFSearcher{filename: f, searchExpr: searchExpr}
 		err := s.search()
@@ -178,10 +186,10 @@ func (s PDFSearcher) searchInPage(searchExpr string, page int) error {
 			break
 		}
 		switch cfg.outStyle {
-		case "csv":
+		case OutStyleCSV:
 			fmt.Printf(`"%s","%d","%d","%s"
 `, s.filename, page, i, res)
-		case "grep":
+		case OutStyleGrep:
 			fallthrough
 		default:
 			fmt.Printf("%s:%d:%d: %s\n", s.filename, page, i, res)
