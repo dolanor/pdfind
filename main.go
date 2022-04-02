@@ -17,6 +17,7 @@ import (
 type config struct {
 	color       bool
 	contextSize uint
+	outStyle    string
 }
 
 func main() {
@@ -36,12 +37,14 @@ var cfg config
 func run(args []string) error {
 	colorcfg := flag.Bool("color", true, "colored search expression context")
 	contextSize := flag.Uint("context", 30, "context displayed (how many character before and after the match is output")
+	outStyle := flag.String("out-style", "grep", `output style: "grep" or "csv"`)
 
 	flag.Usage = printUsage
 	flag.Parse()
 	cfg = config{
 		color:       *colorcfg,
 		contextSize: *contextSize,
+		outStyle:    *outStyle,
 	}
 
 	if flag.NArg() < 1 {
@@ -59,6 +62,7 @@ func run(args []string) error {
 		files = flag.Args()[1:]
 	}
 
+	fmt.Printf(`"%s","%s","%s","%s"\n`, "filename", "page", "colum", "context")
 	for _, f := range files {
 		s := PDFSearcher{filename: f, searchExpr: searchExpr}
 		err := s.search()
@@ -71,22 +75,7 @@ func run(args []string) error {
 }
 
 func (s *PDFSearcher) search() error {
-	f, err := os.Open(s.filename)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	st, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	if st.IsDir() {
-		err = s.searchDir(f)
-		return err
-	}
-
-	err = s.searchFile(f, st.Size())
+	err := s.searchFileName()
 	if err != nil {
 		return err
 	}
@@ -106,19 +95,8 @@ func (s PDFSearcher) searchDir(f *os.File) error {
 			return nil
 		}
 
-		fi, err := d.Info()
-		if err != nil {
-			return err
-		}
-
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
 		s := PDFSearcher{filename: path, searchExpr: s.searchExpr}
-		err = s.searchFile(f, fi.Size())
+		err = s.searchFileName()
 		if err != nil {
 			return err
 		}
@@ -128,6 +106,31 @@ func (s PDFSearcher) searchDir(f *os.File) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func (s PDFSearcher) searchFileName() error {
+	f, err := os.Open(s.filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	if st.IsDir() {
+		err = s.searchDir(f)
+		return err
+	}
+
+	err = s.searchFile(f, st.Size())
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -167,7 +170,15 @@ func (s PDFSearcher) searchInPage(searchExpr string, page int) error {
 		if i == -1 {
 			break
 		}
-		fmt.Printf("%s:p%d:%d: %s\n", s.filename, page, i, res)
+		switch cfg.outStyle {
+		case "csv":
+			fmt.Printf(`"%s","%d","%d","%s"
+`, s.filename, page, i, res)
+		case "grep":
+			fallthrough
+		default:
+			fmt.Printf("%s:%d:%d: %s\n", s.filename, page, i, res)
+		}
 		v = v[i+1:]
 	}
 	return nil
