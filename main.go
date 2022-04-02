@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/ledongthuc/pdf"
 )
 
@@ -83,22 +84,34 @@ func (s PDFSearcher) searchInPage(searchExpr string, page int) error {
 
 	v := strings.ToLower(text)
 	ss := strings.ToLower(searchExpr)
-	i := strings.Index(v, ss)
+	for {
+		i, res := multisearch(v, ss)
+		if i == -1 {
+			break
+		}
+		fmt.Printf("%s:p%d:%d: %s\n", s.filename, page, i, res)
+		v = v[i+1:]
+	}
+	return nil
+}
+
+func multisearch(text string, searchExpr string) (index int, context string) {
+	i := strings.Index(text, searchExpr)
 	// no text found
 	if i == -1 {
-		return nil
+		return -1, ""
 	}
 
-	begin := i - 30
-	end := i + 30
-	if begin < 0 {
-		begin = 0
+	ctxBegin := i - 30
+	ctxEnd := i + 30
+	if ctxBegin < 0 {
+		ctxBegin = 0
 	}
-	if end >= len(v) {
-		end = len(v) - 1
+	if ctxEnd >= len(text) {
+		ctxEnd = len(text) - 1
 	}
-	fmt.Printf("%s:p%d:%d: %s\n", s.filename, page, i, v[begin:end])
-	return nil
+	t := fmt.Sprintf("%s%s%s", text[ctxBegin:i], color.RedString(text[i:i+len(searchExpr)]), text[i+len(searchExpr):ctxEnd])
+	return i, t
 }
 
 type PDFSearcher struct {
